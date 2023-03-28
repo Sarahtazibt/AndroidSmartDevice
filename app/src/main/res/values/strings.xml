@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">AndroidSmartDevice</string>
+    <string name="TitleScan" />
+    <string name="ButtonScanOn" />
+    <string name="ble_scan_title_pause" />
+    <string name="ble_scan_title_play"/>
+
+
+</resources>
