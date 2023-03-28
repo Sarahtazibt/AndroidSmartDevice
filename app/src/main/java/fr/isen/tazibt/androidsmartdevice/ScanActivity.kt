@@ -1,37 +1,65 @@
 package fr.isen.tazibt.androidsmartdevice
 
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
 import android.content.Context
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
+import androidx.recyclerview.widget.LinearLayoutManager
 import fr.isen.tazibt.androidsmartdevice.databinding.ActivityScanBinding
 import java.util.logging.Handler
+import kotlin.Int as Int1
 
 
 class ScanActivity : AppCompatActivity() {
     private lateinit var binding: ActivityScanBinding
     private var mScanning = false
     private val handler = android.os.Handler()
+    private val REQUEST_ENABLE_BT = 1
+
+
 
     ////// Stops scanning after 10 seconds.//////////////////////////////////////////////////////////////////////////////////////////////////////////////
     private val SCAN_PERIOD: Long = 10000
+    private val bluetoothAdapter: BluetoothAdapter? by
+    lazy(LazyThreadSafetyMode.NONE) {
+        val bluetoothManager =
+            getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothManager.adapter
+    }
+
+    private lateinit var adapter: ScanAdapter
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityScanBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        if (bluetoothAdapter?.isEnabled == true) {
+            scanDeviceWithPermission()
+        } else {
+            handleBLENotAvailable()
+        }
+
+    }
 
     private val leScanCallback: ScanCallback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) {
+        override fun onScanResult(callbackType: Int1, result: ScanResult) {
+
             super.onScanResult(callbackType, result)
-            //leDeviceListAdapter.addDevice(result.device)
-            //leDeviceListAdapter.notifyDataSetChanged()
+            adapter.addDevice(result.device)
+            adapter.notifyDataSetChanged()
         }
     }
 
@@ -40,24 +68,19 @@ class ScanActivity : AppCompatActivity() {
         if (!mScanning) { // Stops scanning after a pre-defined scan period.
             handler.postDelayed({
                 mScanning = false
-                bluetoothLeScanner?.stopScan(leScanCallback)
+                bluetoothAdapter?.bluetoothLeScanner?.stopScan(leScanCallback)
+                togglePlayPauseAction()
             }, SCAN_PERIOD)
             mScanning = true
-            bluetoothLeScanner?.startScan(leScanCallback)
+            bluetoothAdapter?.bluetoothLeScanner?.startScan(leScanCallback)
         } else {
             mScanning = false
-
-            bluetoothLeScanner?.stopScan(leScanCallback)
+            bluetoothAdapter?.bluetoothLeScanner?.stopScan(leScanCallback)
         }
+        togglePlayPauseAction()
     }
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    private val bluetoothAdapter: BluetoothAdapter? by
-    lazy(LazyThreadSafetyMode.NONE) {
-        val bluetoothManager =
-            getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        bluetoothManager.adapter
-    }
-    private val bluetoothLeScanner = bluetoothAdapter?.bluetoothLeScanner
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -65,27 +88,20 @@ class ScanActivity : AppCompatActivity() {
         val permig = permissions.all { it.value }
 
         if (permig) {
-
+            initScanList()
+            scanLeDevice()
         } else {
             Log.e("No perm", "Il faut les perms")
         }
     }
 
-    private var mScanning = false
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        binding = ActivityScanBinding.inflate(layoutInflater)
-        setContentView(binding.root)
 
-
-        if (bluetoothAdapter?.isEnabled == true) {
-            scanDeviceWithPermission()
-        } else {
-            handleBLENotAvailable()
-        }
-        override fun onStop() {
-            super.onStop ()
-            if (bluetoothAdapter?.isEnabled == true)
+    @SuppressLint("MissingPermission")
+    override fun onStop() {
+        super.onStop()
+        if (bluetoothAdapter?.isEnabled == true && allPermissionGranted()) {
+            mScanning = false
+            bluetoothAdapter?.bluetoothLeScanner?.stopScan(leScanCallback)
         }
     }
 
@@ -95,8 +111,8 @@ class ScanActivity : AppCompatActivity() {
 
     private fun scanDeviceWithPermission() {
         if (allPermissionGranted()) {
-            scanBLEDevices()
-
+            initScanList()
+            scanLeDevice()
         } else {
             ///request pour toutes les perms
             requestPermissionLauncher.launch(getAllPermissions())
@@ -104,14 +120,17 @@ class ScanActivity : AppCompatActivity() {
 
     }
 
-
-    private fun scanBLEDevices() {
-        togglePlayPauseAction()
-        initScanList()
-    }
-
     private fun initScanList() {
-      binding.scanRecyclerView.adapter = ScanAdapter(arrayListOf())
+        binding.playPause.setOnClickListener {
+            scanLeDevice()
+        }
+        binding.scanRecyclerView.layoutManager = LinearLayoutManager(this)
+        adapter = ScanAdapter(arrayListOf()) {
+            val intent = Intent(this, DeviceActivity::class.java)
+            intent.putExtra("cle", it)
+            startActivity(intent)
+        }
+        binding.scanRecyclerView.adapter = adapter
     }
 
     private fun allPermissionGranted(): Boolean {
@@ -147,13 +166,14 @@ class ScanActivity : AppCompatActivity() {
     private fun togglePlayPauseAction() {
         if (mScanning) {
             binding.scanTitle.text = getString(R.string.ble_scan_title_pause)
-            //binding.playPause.setImageResource(R.drawable.baseline_pause_24)
+            binding.playPause.setImageResource(R.drawable.baseline_pause_24)
             binding.progressBar.isVisible = true
         } else {
             binding.scanTitle.text = getString(R.string.ble_scan_title_play)
-            //binding.playPause.setImageResource(R.drawable.baseline_play_24)
+            binding.playPause.setImageResource(R.drawable.baseline_play_arrow_24)
             binding.progressBar.isVisible = false
         }
-    }
-}
 
+    }
+
+}
